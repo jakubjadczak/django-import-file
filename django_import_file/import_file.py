@@ -26,6 +26,72 @@ class ExcludeColumnChecker(ColumnCheckerStrategy):
     def check(self, exclude_columns: list, field_names: list) -> bool:
         if all(column in field_names for column in exclude_columns):
             return [col for col in field_names if col not in exclude_columns]
+        
+
+class ColumnRenameStrategy(ABC):
+
+    @abstractmethod
+    def get_verbose_name(self, model, field: str):
+        pass
+
+    @abstractmethod
+    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+        pass
+
+
+class MapColumnRename(ColumnRenameStrategy):
+
+    def get_verbose_name(self, model, field: str):
+        raise NotImplementedError("This method is not implemented in this subclass")
+
+    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+        # column_map = {"mat_name": "Material Name", ...}
+        column_dict = {}
+        for col in columns:
+            el = column_map.get(col, None)
+            if el != None:
+                column_dict[col] = el
+            else:
+                column_dict[col] = col
+
+        return column_dict
+    
+
+class VerboseNameColumnRename(ColumnRenameStrategy):
+
+    def get_verbose_name(self, model, field: str):
+        field = model._meta.get_field(field)
+        if field.verbose_name:
+            return field.verbose_name
+        else:
+            return None
+    
+    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+        # column_map = 
+        column_dict = {}
+        for col in columns:
+            verbose = self.get_verbose_name(model, col)
+            if verbose != None:
+                column_dict[col] = verbose
+            else:
+                column_dict[col] = col
+
+        return column_dict
+    
+
+class FieldNameColumnRename(ColumnRenameStrategy):
+    def get_verbose_name(self, model, field: str):
+        raise NotImplementedError("This method is not implemented in this subclass")
+    
+    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+        # column_map = 
+        column_dict = {}
+        for col in columns:
+            column_dict[col] = col
+
+        return column_dict
+
+
 
 
 class FileImportMixin:
@@ -34,13 +100,46 @@ class FileImportMixin:
             "required": RequiredColumnChecker(),
             "exclude": ExcludeColumnChecker(),
         }
+        self.column_rename = {
+            "map_column": MapColumnRename(),
+            "verbose_name": VerboseNameColumnRename(),
+            "field_name": FieldNameColumnRename()
+        }
         self.calculated_fields = []
+        self.column_dict = {}
 
     def dispatch(self, request, *args, **kwargs):
         self.field_names = [field.name for field in self.model._meta.get_fields()]
         self.required_columns = self.get_required_columns()
         self.calculated_fields = self.get_calculated_fields()
+        self.column_dict = self.construct_column_dict()
         return super().dispatch(request, *args, **kwargs)
+    
+    
+    def construct_column_dict(self):
+        try:
+            if self.use_verbose == True:
+                return self.column_rename["field_name"].construct_dict(
+                    columns=self.required_columns,
+                    column_map=self.map_column,
+                    model=self.model
+                )
+        except AttributeError:
+            pass
+
+        try:
+            if self.map_column:
+                return self.column_rename["field_name"].construct_dict(
+                    columns=self.required_columns,
+                    column_map=self.map_column
+                )
+        except AttributeError:
+            pass
+
+        return self.column_rename["field_name"].construct_dict(
+            columns=self.required_columns
+        )
+
 
     def get_required_columns(self):
         try:
@@ -130,8 +229,11 @@ class FileImportMixin:
         with transaction.atomic():
             for index, row in df.iterrows():
                 try:
-                    for col in self.required_columns:
-                        save_dict[col] = row.get(col, None)
+                    # for col in self.required_columns:
+                    #     save_dict[col] = row.get(col, None)
+
+                    for col, col_name in self.column_dict.items():
+                        save_dict[col] = row.get(col_name, None)
 
                     for field in self.calculated_fields:
                         calculate_method = getattr(self, f"calculate_{field}")
