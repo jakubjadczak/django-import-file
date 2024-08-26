@@ -92,6 +92,24 @@ class FieldNameColumnRename(ColumnRenameStrategy):
         return column_dict
 
 
+class FileTypeReaderStrategy(ABC):
+    @abstractmethod
+    def read_file(self, file_path: str, **kwargs):
+        pass
+
+
+class CSVReader(FileTypeReaderStrategy):
+    def read_file(self, file_path: str, **kwargs):
+        return pd.read_csv(file_path, **kwargs)
+
+
+class ExcelReader(FileTypeReaderStrategy):
+    def read_file(self, file_path: str, **kwargs):
+        if kwargs["sheet_name"] != None:
+            return pd.read_excel(file_path, sheet_name=kwargs["sheet_name"])
+        return pd.read_excel(file_path, **kwargs)
+
+
 class FileImportMixin:
     def __init__(self):
         self.column_checkers = {
@@ -103,6 +121,10 @@ class FileImportMixin:
             "verbose_name": VerboseNameColumnRename(),
             "field_name": FieldNameColumnRename(),
         }
+        self.reader = {
+            "csv": CSVReader(),
+            "xlsx": ExcelReader(),
+        }
         self.calculated_fields = []
         self.column_dict = {}
 
@@ -113,6 +135,10 @@ class FileImportMixin:
         self.column_dict = self.construct_column_dict()
         print(self.column_dict)
         return super().dispatch(request, *args, **kwargs)
+
+    def get_variable(self, variable: str):
+        var = getattr(self, variable, None)
+        return var
 
     def construct_column_dict(self):
         try:
@@ -187,20 +213,33 @@ class FileImportMixin:
         if hasattr(file, "temporary_file_path"):
             return file.temporary_file_path()
         else:
-            decoded_file_content = file.read().decode(self.file_encoding)
+            try:
+                file_content = file.read()
+                decoded_file_content = file_content.decode(self.file_encoding)
+                mode = "w"
+            except (UnicodeDecodeError, AttributeError):
+                mode = "wb"
+
             with tempfile.NamedTemporaryFile(
-                delete=False, mode="w", encoding=self.file_encoding
+                delete=False,
+                mode=mode,
+                encoding=self.file_encoding if mode == "w" else None,
             ) as temp_file:
-                temp_file.write(decoded_file_content)
+                if mode == "w":
+                    temp_file.write(decoded_file_content)
+                else:
+                    temp_file.write(file_content)
                 return temp_file.name
 
     def read_file(self, file_path: str):
         if self.file_extension == "csv":
-            return pd.read_csv(
+            return self.reader["csv"].read_file(
                 file_path, delimiter=self.delimiter, encoding=self.file_encoding
             )
         elif self.file_extension == "xlsx":
-            return pd.read_excel(file_path)
+            return self.reader["xlsx"].read_file(
+                file_path, sheet_name=self.get_variable("sheet_name")
+            )
         else:
             raise ValueError("Invalid file extension.")
 
