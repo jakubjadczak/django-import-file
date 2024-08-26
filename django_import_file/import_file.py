@@ -26,7 +26,7 @@ class ExcludeColumnChecker(ColumnCheckerStrategy):
     def check(self, exclude_columns: list, field_names: list) -> bool:
         if all(column in field_names for column in exclude_columns):
             return [col for col in field_names if col not in exclude_columns]
-        
+
 
 class ColumnRenameStrategy(ABC):
 
@@ -35,7 +35,7 @@ class ColumnRenameStrategy(ABC):
         pass
 
     @abstractmethod
-    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+    def construct_dict(self, columns: list, column_map: dict = None, model=None):
         pass
 
 
@@ -44,7 +44,7 @@ class MapColumnRename(ColumnRenameStrategy):
     def get_verbose_name(self, model, field: str):
         raise NotImplementedError("This method is not implemented in this subclass")
 
-    def construct_dict(self, columns: list, column_map: dict = None, model = None):
+    def construct_dict(self, columns: list, column_map: dict = None, model=None):
         # column_map = {"mat_name": "Material Name", ...}
         column_dict = {}
         for col in columns:
@@ -55,7 +55,7 @@ class MapColumnRename(ColumnRenameStrategy):
                 column_dict[col] = col
 
         return column_dict
-    
+
 
 class VerboseNameColumnRename(ColumnRenameStrategy):
 
@@ -65,9 +65,9 @@ class VerboseNameColumnRename(ColumnRenameStrategy):
             return field.verbose_name
         else:
             return None
-    
-    def construct_dict(self, columns: list, column_map: dict = None, model = None):
-        # column_map = 
+
+    def construct_dict(self, columns: list, column_map: dict = None, model=None):
+        # column_map =
         column_dict = {}
         for col in columns:
             verbose = self.get_verbose_name(model, col)
@@ -77,21 +77,19 @@ class VerboseNameColumnRename(ColumnRenameStrategy):
                 column_dict[col] = col
 
         return column_dict
-    
+
 
 class FieldNameColumnRename(ColumnRenameStrategy):
     def get_verbose_name(self, model, field: str):
         raise NotImplementedError("This method is not implemented in this subclass")
-    
-    def construct_dict(self, columns: list, column_map: dict = None, model = None):
-        # column_map = 
+
+    def construct_dict(self, columns: list, column_map: dict = None, model=None):
+        # column_map =
         column_dict = {}
         for col in columns:
             column_dict[col] = col
 
         return column_dict
-
-
 
 
 class FileImportMixin:
@@ -103,7 +101,7 @@ class FileImportMixin:
         self.column_rename = {
             "map_column": MapColumnRename(),
             "verbose_name": VerboseNameColumnRename(),
-            "field_name": FieldNameColumnRename()
+            "field_name": FieldNameColumnRename(),
         }
         self.calculated_fields = []
         self.column_dict = {}
@@ -113,25 +111,24 @@ class FileImportMixin:
         self.required_columns = self.get_required_columns()
         self.calculated_fields = self.get_calculated_fields()
         self.column_dict = self.construct_column_dict()
+        print(self.column_dict)
         return super().dispatch(request, *args, **kwargs)
-    
-    
+
     def construct_column_dict(self):
         try:
             if self.use_verbose == True:
-                return self.column_rename["field_name"].construct_dict(
+                return self.column_rename["verbose_name"].construct_dict(
                     columns=self.required_columns,
-                    column_map=self.map_column,
-                    model=self.model
+                    column_map=None,
+                    model=self.model,
                 )
         except AttributeError:
             pass
 
         try:
             if self.map_column:
-                return self.column_rename["field_name"].construct_dict(
-                    columns=self.required_columns,
-                    column_map=self.map_column
+                return self.column_rename["map_column"].construct_dict(
+                    columns=self.required_columns, column_map=self.map_column
                 )
         except AttributeError:
             pass
@@ -139,7 +136,6 @@ class FileImportMixin:
         return self.column_rename["field_name"].construct_dict(
             columns=self.required_columns
         )
-
 
     def get_required_columns(self):
         try:
@@ -209,9 +205,10 @@ class FileImportMixin:
             raise ValueError("Invalid file extension.")
 
     def import_data(self, df):
-        print(self.required_columns)
         missing_columns = [
-            col for col in self.required_columns if col not in df.columns
+            col_name
+            for col_name in self.column_dict.values()
+            if col_name not in df.columns
         ]
         if missing_columns:
             raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
@@ -229,9 +226,6 @@ class FileImportMixin:
         with transaction.atomic():
             for index, row in df.iterrows():
                 try:
-                    # for col in self.required_columns:
-                    #     save_dict[col] = row.get(col, None)
-
                     for col, col_name in self.column_dict.items():
                         save_dict[col] = row.get(col_name, None)
 
