@@ -197,7 +197,7 @@ class FileImportMixin:
         file = form.cleaned_data["file"]
         try:
             file_path = self.get_file_path(file)
-            df = self.read_file(file_path)
+            df = self.get_file_content(file_path)
             result = self.import_data(df)
 
             if result != "Import successful with no errors.":
@@ -231,7 +231,7 @@ class FileImportMixin:
                     temp_file.write(file_content)
                 return temp_file.name
 
-    def read_file(self, file_path: str):
+    def get_file_content(self, file_path: str):
         if self.file_extension == "csv":
             return self.reader["csv"].read_file(
                 file_path, delimiter=self.delimiter, encoding=self.file_encoding
