@@ -9,6 +9,8 @@ from django.shortcuts import redirect
 from django.contrib import messages
 import inspect
 
+from .log_config import LogConfig
+
 
 class ColumnCheckerStrategy(ABC):
     @abstractmethod
@@ -127,6 +129,10 @@ class FileImportMixin:
         }
         self.calculated_fields = []
         self.column_dict = {}
+
+        if self.get_variable("app_name") != None and self.get_variable("log_type") != None:
+            self.logging = LogConfig(self.model, self.get_variable("app_name"), self.get_variable("app_name"), self.get_variable("log_type"))
+        self.logging = None
 
     def dispatch(self, request, *args, **kwargs):
         self.field_names = [field.name for field in self.model._meta.get_fields()]
@@ -260,10 +266,12 @@ class FileImportMixin:
         return "Import successful with no errors."
 
     def process_rows(self, df):
+        i = 0
         save_dict = {}
         error_report = []
         with transaction.atomic():
             for index, row in df.iterrows():
+                i += 1
                 try:
                     for col, col_name in self.column_dict.items():
                         save_dict[col] = row.get(col_name, None)
@@ -282,6 +290,8 @@ class FileImportMixin:
                     )
                 finally:
                     save_dict.clear()
+        if self.logging != None:
+            log_info = self.logging.write_log(rows_ampunt=i)
         return error_report
 
     def save_row(self, data):
